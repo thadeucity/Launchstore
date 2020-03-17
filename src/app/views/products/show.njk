@@ -1,23 +1,24 @@
 {% extends "layout.njk" %}
+{% import "parts/card.njk" as cards %}
 
 {% block content %}
 
-<section class="product-single container">
+{%call  cards.render('', 'product-single container') %}
 
   <div class="gallery">
     <div class="highlight">
-        {% if not files[0] %}
+        {% if not product.files[0] %}
           <img src="http://placehold.it/500x500?text=PRODUTO_SEM_FOTO" alt="placeholder"/>
         {% else %}
           <img 
-            src="{{files[0].src}}" 
-            alt="{{files[0].name}}"
+            src="{{product.files[0].src}}" 
+            alt="{{product.files[0].name}}"
             onclick="Lightbox.open()"
           >
         {% endif %}
 
         <div class="lightbox-target">
-          <img src="{{files[0].src}}" alt="{{files[0].name}}">
+          <img src="{{product.files[0].src}}" alt="{{product.files[0].name}}">
           <a 
             href="#" 
             class="lightbox-close"
@@ -28,7 +29,7 @@
         </div>
     </div>
     <div class="gallery-preview">
-      {% for image in files %}
+      {% for image in product.files %}
         <img 
           src="{{image.src}}"
           alt="{{image.name}}"
@@ -54,24 +55,36 @@
 
     <div class="price-buy">
       <div class="price">
-        {{product.price}}
-        {% if product.oldPrice !== product.price %}
-          <span class="old">{{product.oldPrice}}</span>
+        {{product.formattedPrice}}
+        {% if product.formattedOldPrice !== product.formattedPrice %}
+          <span class="old">{{product.formattedOldPrice}}</span>
         {% endif %}
       </div>
+
+      {% if (session.userId) and (product.user_id == session.userId)%}
+        <p class="unavailable">Você é o vendedor</p>
+      {% else %}
+
       <div class="buy">
         {% if product.status == 0%}
           <p class="unavailable">Indisponível</p>
         {% elseif product.quantity == 0 %}
           <p class="unavailable">Fora de Estoque</p>
         {% else %}
-          <button class="button">Comprar</button>
+          <form action="/users/orders" method="POST">
+            <input type="hidden" name="id" value="{{product.id}}">
+            <button class="button">Comprar</button>
+          </form>
         {% endif %}
       </div>
+
+      {% endif %}
+
+
     </div>
 
   </div>
 
-</section>
+{% endcall %}
 
 {% endblock content %}

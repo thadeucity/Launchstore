@@ -1,129 +1,141 @@
-const {formatPrice, date} = require ('../../lib/utils');
+const { unlinkSync } = require('fs');
 
 const Category = require ('../models/Category');
 const Product = require ('../models/Product');
 const File = require ('../models/File');
 
+const LoadProductService = require('../services/LoadProductService');
+
 module.exports={
-  create(req, res){
-    // Pegar Categorias
-    Category.all()
-    .then(function (results){
-      const categories = results.rows;
+  async create(req, res){
+    try {
+      const categories = await Category.findAll();
       return res.render('products/create.njk', { categories });
-    }).catch(function(err){
-      throw new Error(err);
-    });  
+    } catch (error) {
+      console.error(error);
+    }
   },
   async post(req, res){
-    const keys = Object.keys(req.body);
-    for (key of keys){
-      if(req.body[key] == "") {
-        return res.send('Please, fill all fields!');
-      }
+    try {
+      let { category_id, name, description, old_price,
+        price, quantity, status } = req.body;
+
+      price = price.replace(/\D/g, "");
+
+      const product_id = await Product.create({
+        category_id,
+        user_id : req.session.userId,
+        name,
+        description, 
+        old_price: old_price || price,
+        price, 
+        quantity, 
+        status: status || 1
+      });
+
+      const filesPromise = req.files.map (file => 
+        File.create({ name: file.filename, path: file.path , product_id}));
+      await Promise.all(filesPromise);
+
+      return res.redirect(`products/${product_id}/edit`);
+
+    } catch (err) {
+      console.error(err);
     }
 
-    if(req.files.length == 0){
-      return res.send('Please, send at least one image')
-    }
-
-    req.body.user_id = req.session.userId;
-    
-    let results = await Product.create(req.body);
-    const productId = results.rows[0].id;
-
-    const filesPromise = req.files.map (file => File.create({ ...file, product_id: productId }));
-    await Promise.all(filesPromise);
-
-    return res.redirect(`products/${productId}`);
   },
   async show (req, res){
+    try {
 
-    let results = await Product.find(req.params.id)
+      const product = await LoadProductService.load('product', { 
+        where: {
+          id: req.params.id
+        }
+      });
 
-    const product = results.rows[0];
+      return res.render('products/show', { product })  
 
-    if(!product) return res.send("Product Not Found!");
+    } catch (err) {
+      console.error(err);
+    }
 
-    const { month, day, hour, minutes } = date(product.updated_at);
-
-    product.published ={
-      day: `${day}/${month}`,
-      hour: `${hour}h${minutes}`
-    };
-
-    product.oldPrice = formatPrice(product.old_price);
-    product.price = formatPrice(product.price);
-
-    results = await Product.files(product.id);
-    const files = results.rows.map(file => ({ 
-      ...file,
-      src: `${req.protocol}://${req.headers.host}${file.path.replace('public', '')}`
-    }));
-
-    return res.render('products/show', { product, files })
   },
   async edit(req, res){
-    let results = await Product.find(req.params.id);
-    const product = results.rows[0];
+    try {
 
-    if(!product) return res.send('Product not found!');
+      const product = await LoadProductService.load('product', {
+        where:{
+          id: req.params.id
+        }
+      });
 
-    product.price = formatPrice(product.price);
-    product.old_price = formatPrice(product.old_price);
+      //get categories
+      const categories = await Category.findAll();
 
+      return res.render(`products/edit`, {product, categories});
 
-    //get categories
-    results = await Category.all();
-    const categories = results.rows;
-
-    // get images
-    results = await Product.files(product.id)
-    let files = results.rows;
-    files = files.map(file => ({
-      ...file,
-      src: `${req.protocol}://${req.headers.host}${file.path.replace('public', '')}`
-    }));
-
-    return res.render(`products/edit.njk`, {product, categories, files});
+    } catch (err) {
+      console.error(err);
+    }
+    
   },
   async put(req, res){
-    const keys = Object.keys(req.body);
-    for (key of keys){
-      if(req.body[key] == "" && key != "removed_files") {
-        return res.send('Please, fill all fields!');
+    try {
+
+      if(req.files.length != 0){
+        const newFilesPromise = req.files.map(file => File.create({...file, product_id: req.body.id}));
+
+        await Promise.all(newFilesPromise);
       }
+
+      if (req.body.removed_files){
+        const removedFiles = req.body.removed_files.split(',');
+        const lastIndex = removedFiles.length - 1;
+        removedFiles.splice(lastIndex, 1);
+
+        const removedFilesPromise = removedFiles.map(id => File.delete(id));
+
+        await Promise.all(removedFilesPromise);
+      }
+
+      req.body.price = req.body.price.replace(/\D/g, "");
+
+      if (req.body.old_price != req.body.price){
+        const oldProduct = await Product.find(req.body.id);
+        req.body.old_price = oldProduct.price;
+      }
+
+      await Product.update(req.body.id, {
+        category_id: req.body.category_id,
+        name: req.body.name,
+        description: req.body.description,
+        old_price: req.body.old_price,
+        price: req.body.price,
+        quantity: req.body.quantity,
+        status: req.body.status
+      });
+
+      return res.redirect(`/products/${req.body.id}`);
+
+    } catch (err) {
+      console.error(err);
     }
 
-    if(req.files.length != 0){
-      const newFilesPromise = req.files.map(file => File.create({...file, product_id: req.body.id}));
-
-      await Promise.all(newFilesPromise);
-    }
-
-    if (req.body.removed_files){
-      const removedFiles = req.body.removed_files.split(',');
-      const lastIndex = removedFiles.length - 1;
-      removedFiles.splice(lastIndex, 1);
-
-      const removedFilesPromise = removedFiles.map(id => File.delete(id));
-
-      await Promise.all(removedFilesPromise);
-    }
-
-    req.body.price = req.body.price.replace(/\D/g, "");
-
-    if (req.body.old_price != req.body.price){
-      const oldProduct = await Product.find(req.body.id);
-      req.body.old_price = oldProduct.rows[0].price;
-    }
-
-    await Product.update(req.body);
-
-    return res.redirect(`/products/${req.body.id}`);
+    
   },
   async delete(req,res){
+
+    const files = await Product.files(req.body.id);
+    
     await Product.delete(req.body.id);
+
+    files.map(file => {
+      try{
+        unlinkSync(file.path);
+      }catch (err){
+        console.error(err);
+      }
+    });
 
     return res.redirect('/products/create');
   }
