@@ -81,7 +81,7 @@ const Base = {
       console.error(err);
     }
   },
-  delete(id){
+  delete(id){ 
     return db.query(`DELETE FROM ${this.table} WHERE id = $1`, [id]);
   }
 };
