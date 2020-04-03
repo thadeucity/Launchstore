@@ -1,7 +1,11 @@
 const LoadProductService = require ('../services/LoadProductService');
 const User = require ('../models/User');
+const Order = require ('../models/Order');
 
 const mailer = require('../../lib/mailer');
+const {formatPrice, date} = require ('../../lib/utils');
+
+const Cart = require('../../lib/cart');
 
 const email = (seller, product, buyer) => `
 <h2>Olá ${seller.name}</h2>
@@ -21,29 +25,108 @@ const email = (seller, product, buyer) => `
 `;
 
 module.exports = {
+  async index(req, res){
+    // pegar os pedidos do usuário
+    let orders = await Order.findAll({where: {buyer_id: req.session.userId}});
+
+    const getOrdersPromise = orders.map(async order => {
+      // detalhes do produto 
+      order.product = await LoadProductService.load('product', {
+        where: {id: order.product_id}
+      });
+
+      // detalhes do comprador
+      order.buyer = await User.findOne({
+        where: {id: order.buyer_id}
+      });
+
+      // detalhes do vendedor
+      order.seller = await User.findOne({
+        where: {id: order.seller_id}
+      });
+
+      // formatação de preço
+      order.formattedPrice = formatPrice(order.price);
+      order.formattedTotal = formatPrice(order.total);
+
+      // formatação dos status
+      const statuses = {
+        open: 'Aberto',
+        sold: 'Vendido',
+        canceled: 'Cancelado'
+      };
+
+      order.formattedStatus = statuses[order.status];
+
+      // formatação de atualizado em: ___
+      const updatedAt = date(order.updated_at);
+      order.formattedUpdatedAt = `${order.formattedStatus} em ${updatedAt.day}/${updatedAt.month}/${updatedAt.year} às ${updatedAt.hour}:${updatedAt.minutes}`;
+
+      return order;
+    });
+
+    orders = await Promise.all(getOrdersPromise);
+
+    return res.render("orders/index", { orders });
+
+  },
   async post (req, res){
     try {
-      // Pegar os dados do produto
-      const product = await LoadProductService.load('product', {where: {
-        id: req.body.id
-      }});
+      // pegar os produtos do carrinho
+      const cart = Cart.init(req.session.cart);
+
+      // filter out products that are sold by this buyer
+      const buyer_id = req.session.userId;
+      const filteredItems = cart.items.filter(item =>
+        item.product.user_id != buyer_id
+      );
+
+      // criar o pedido
+      const createOrdersPromise = filteredItems.map(async item => {
+        let { product, price:total, quantity } = item;
+        const { price, id: product_id, user_id: seller_id } = product;
+        const status = "open";
+
+        const order = await Order.create({
+          seller_id,
+          buyer_id,
+          product_id,
+          price,
+          total,
+          quantity,
+          status
+        });
+
+                // Pegar os dados do produto
+        product = await LoadProductService.load('product', {where: {
+          id: product_id
+        }});
 
 
-      // Os dados do vendedor
-      const seller = await User.findOne({where: {id: product.user_id}});
+        // Os dados do vendedor
+        const seller = await User.findOne({where: {id: seller_id}});
 
 
-      // Os dados do comprador 
-      const buyer = await User.findOne({where: {id: req.session.userId}});
+        // Os dados do comprador 
+        const buyer = await User.findOne({where: {id: buyer_id}});
 
 
-      // Enviar email com dados da compra para o vendedor do produto
-      await mailer.sendMail({
-        to:seller.email,
-        from: 'no-reply@launchstore.com.br',
-        subject: 'Novo pedido de compra',
-        html: email(seller, product, buyer)
+        // Enviar email com dados da compra para o vendedor do produto
+        await mailer.sendMail({
+          to:seller.email,
+          from: 'no-reply@launchstore.com.br',
+          subject: 'Novo pedido de compra',
+          html: email(seller, product, buyer)
+        });
+
+        return order;
       });
+
+      await Promise.all(createOrdersPromise);
+
+      // Clear Cart
+      delete req.session.cart;
+      Cart.init();
 
       // Notificar o usuário com alguma mensagem de sucesso
       return res.render('orders/success');
