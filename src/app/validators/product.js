@@ -7,7 +7,9 @@ async function post(req, res, next){
     }
   }
 
-  if(!req.file || req.files.length == 0){
+  console.log (req.files)
+
+  if(!req.files || req.files.length == 0){
     return res.send('Por favor, envie pelo menos uma imagem.')
   }
 
