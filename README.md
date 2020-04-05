@@ -22,7 +22,7 @@
 
 Launchstore is one of the projects developed during the [LaunchBase Bootcamp](https://skylab.rocketseat.com.br/). It is an Online Store to connect vendors and buyers. The user can post an ad to sell a product and other users can find the ad by searching it or browsing in the webstore.
 
-The project includes a session manager a system to prevent users from overbuying a product. An automated email system to inform sellers when someone buy thier products and an image upload system for products. 
+The project includes a session manager a system to prevent users from overbuying a product. An automated email system to inform sellers when someone buys their products and an image upload system for products. 
 
 <img alt="Launchstore sample Image" src="./sample/computer_mockup.jpg"/>
 
